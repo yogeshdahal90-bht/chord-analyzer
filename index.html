@@ -28,7 +28,9 @@
             <option value="7">Capo 7</option>
           </select>
         </div>
+        <button id="suggest-capo-btn" type="button">Suggest Best Capo</button>
       </div>
+      <p id="capo-suggestion-msg" class="capo-suggestion-msg"></p>
     </header>
 
     <main>
@@ -38,7 +40,7 @@
         <h3>Live Pitch Spectrum (Chromagram)</h3>
         <canvas id="chroma-canvas" width="800" height="130"></canvas>
       </section>
-      
+
       <section class="chord-display-container">
         <h2>Detected Progression</h2>
         <div id="chord-timeline" class="chord-timeline">
