@@ -1,6 +1,7 @@
 import { analyzeAudioBuffer } from './audioAnalyzer.js';
 import { transposeForCapo } from './chordTransposer.js';
 import { renderChordSVG } from './chordRenderer.js';
+import { initVisualizer, renderLiveChroma } from './chromaVisualizer.js';
 
 let audioTimelineData = [];
 let currentCapo = 0;
@@ -11,14 +12,17 @@ const audioInput = document.getElementById('audio-input');
 const capoSelect = document.getElementById('capo-select');
 const timelineContainer = document.getElementById('chord-timeline');
 const diagramContainer = document.getElementById('chord-diagram');
+const chromaCanvas = document.getElementById('chroma-canvas');
 
-// 1. Handle File Upload & Processing Pipeline
+// Initialize visualizer canvas
+initVisualizer(chromaCanvas);
+
+// 1. Audio Processing Pipeline
 audioInput.addEventListener('change', async (event) => {
   const file = event.target.files[0];
   if (!file) return;
 
-  // Show status feedback while WASM processes the audio
-  timelineContainer.innerHTML = `<p style="color: var(--primary-color); font-weight: bold;">Analyzing audio pitch profiles with WebAssembly... Please wait.</p>`;
+  timelineContainer.innerHTML = `<p style="color: var(--primary-color);">Extracting pitch profile & mapping chords...</p>`;
   diagramContainer.innerHTML = '';
   audioTimelineData = [];
   activeChordIndex = -1;
@@ -31,22 +35,21 @@ audioInput.addEventListener('change', async (event) => {
     const arrayBuffer = await file.arrayBuffer();
     const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
-    // Extract real Chromagram features via Essentia.js
+    // Extract pre-computed timeline
     audioTimelineData = await analyzeAudioBuffer(audioBuffer);
     renderTimeline();
-    
-    // Auto-select first chord shape if available
+
     if (audioTimelineData.length > 0) {
       activeChordIndex = 0;
       highlightActiveChord();
     }
   } catch (err) {
     console.error("Audio Processing Error:", err);
-    timelineContainer.innerHTML = `<p style="color: #ff5252;">Error processing audio file. Please try another MP3 or WAV track.</p>`;
+    timelineContainer.innerHTML = `<p style="color: #ff5252;">Error decoding audio file. Please try another MP3 or WAV file.</p>`;
   }
 });
 
-// 2. Dynamic Capo Transposition
+// 2. Dynamic Capo Listener
 capoSelect.addEventListener('change', (e) => {
   currentCapo = parseInt(e.target.value, 10);
   renderTimeline();
@@ -55,14 +58,14 @@ capoSelect.addEventListener('change', (e) => {
   }
 });
 
-// 3. Render Chord Cards
+// 3. Render Timeline Cards
 function renderTimeline() {
-  if (!audioTimelineData || audioTimelineData.length === 0) return;
-  
+  if (!audioTimelineData.length) return;
+
   timelineContainer.innerHTML = '';
   audioTimelineData.forEach((item, index) => {
     const transposedChord = transposeForCapo(item.chord, currentCapo);
-    
+
     const card = document.createElement('div');
     card.className = `chord-card ${index === activeChordIndex ? 'active' : ''}`;
     card.dataset.index = index;
@@ -79,7 +82,7 @@ function renderTimeline() {
   });
 }
 
-// 4. Real-Time Timeupdate Listener with Smooth Auto-Scroll
+// 4. Time Synchronization & Canvas Render Loop
 audioPlayer.addEventListener('timeupdate', () => {
   if (!audioTimelineData.length) return;
 
@@ -89,9 +92,14 @@ audioPlayer.addEventListener('timeupdate', () => {
     (item) => currentTime >= item.startTime && currentTime < item.endTime
   );
 
-  if (index !== -1 && index !== activeChordIndex) {
-    activeChordIndex = index;
-    highlightActiveChord();
+  if (index !== -1) {
+    // Render live spectrum bars for current frame
+    renderLiveChroma(audioTimelineData[index].chroma);
+
+    if (index !== activeChordIndex) {
+      activeChordIndex = index;
+      highlightActiveChord();
+    }
   }
 });
 
