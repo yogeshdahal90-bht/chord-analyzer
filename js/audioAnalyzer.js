@@ -1,22 +1,8 @@
-/* global EssentiaWasm, Essentia */
+/* global Meyda */
 
-let essentia = null;
-
-// Initialize Essentia WASM module
-async function initEssentia() {
-  if (essentia) return essentia;
-  
-  return new Promise((resolve) => {
-    EssentiaWasm().then((wasmModule) => {
-      essentia = new Essentia(wasmModule);
-      resolve(essentia);
-    });
-  });
-}
-
-// Idealized 12-bin Chroma profiles for Major and Minor triads
+// Idealized 12-bin Pitch Profiles
 const CHORD_PROFILES = [
-  // Major triads
+  // Major Triads
   { name: 'C',   profile: [1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0] },
   { name: 'C#',  profile: [0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0] },
   { name: 'D',   profile: [0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0] },
@@ -29,7 +15,7 @@ const CHORD_PROFILES = [
   { name: 'A',   profile: [0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0] },
   { name: 'A#',  profile: [0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0] },
   { name: 'B',   profile: [0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1] },
-  // Minor triads
+  // Minor Triads
   { name: 'Cm',  profile: [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0] },
   { name: 'C#m', profile: [0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0] },
   { name: 'Dm',  profile: [0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0] },
@@ -44,25 +30,17 @@ const CHORD_PROFILES = [
   { name: 'Bm',  profile: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1] }
 ];
 
-// Cosine similarity to match extracted chromagram against ideal chord profiles
-function matchChord(chroma) {
-  let maxSimilarity = -Infinity;
+export function matchChord(chroma) {
+  let maxScore = -1;
   let bestChord = 'C';
 
   for (const { name, profile } of CHORD_PROFILES) {
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-
+    let score = 0;
     for (let i = 0; i < 12; i++) {
-      dotProduct += chroma[i] * profile[i];
-      normA += chroma[i] * chroma[i];
-      normB += profile[i] * profile[i];
+      score += (chroma[i] || 0) * profile[i];
     }
-
-    const similarity = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB) || 1);
-    if (similarity > maxSimilarity) {
-      maxSimilarity = similarity;
+    if (score > maxScore) {
+      maxScore = score;
       bestChord = name;
     }
   }
@@ -71,55 +49,48 @@ function matchChord(chroma) {
 }
 
 /**
- * Analyzes audio buffer using Essentia WASM HPCP feature extraction.
+ * Pre-computes full track Chromagram and Chord Timeline.
  */
 export async function analyzeAudioBuffer(audioBuffer) {
-  const ess = await initEssentia();
-  
-  // Get mono channel audio data
-  const pcmData = audioBuffer.getChannelData(0);
+  const channelData = audioBuffer.getChannelData(0);
   const sampleRate = audioBuffer.sampleRate;
-  
-  // Windowing settings for ~2 seconds per chord window
-  const frameSize = 4096;
-  const hopSize = 2048;
-  const windowSize = Math.floor(sampleRate * 1.5); // Analyze every 1.5s block
-  
-  const rawDetections = [];
+  const bufferSize = 4096;
+  const hopSize = Math.floor(sampleRate * 1.5); // Analyze frame every 1.5s
 
-  for (let offset = 0; offset < pcmData.length; offset += windowSize) {
-    const chunk = pcmData.subarray(offset, offset + windowSize);
-    if (chunk.length < frameSize) break;
+  Meyda.bufferSize = bufferSize;
+  Meyda.sampleRate = sampleRate;
 
-    // Convert Audio Chunk to Essentia Vector
-    const signalVector = ess.arrayToVector(chunk);
-    
-    // Extract Pitch Class Profile (HPCP)
-    const hpcpResult = ess.HPCP(signalVector, sampleRate);
-    const chroma = ess.vectorToArray(hpcpResult.hpcp);
-    
-    // Free C++ WASM Memory
-    signalVector.delete();
+  const timeline = [];
 
+  for (let offset = 0; offset < channelData.length; offset += hopSize) {
+    const frame = channelData.subarray(offset, offset + bufferSize);
+    if (frame.length < bufferSize) break;
+
+    const chroma = Meyda.extract('chroma', frame);
     const startTime = offset / sampleRate;
-    const endTime = Math.min((offset + windowSize) / sampleRate, audioBuffer.duration);
-    const detectedChord = matchChord(chroma);
+    const endTime = Math.min((offset + hopSize) / sampleRate, audioBuffer.duration);
 
-    rawDetections.push({ startTime, endTime, chord: detectedChord });
+    if (chroma && chroma.length === 12) {
+      const detectedChord = matchChord(chroma);
+      timeline.push({
+        startTime,
+        endTime,
+        chord: detectedChord,
+        chroma: Array.from(chroma)
+      });
+    }
   }
 
-  // Smooth out rapid flickering (merge adjacent identical chords)
-  return mergeIdenticalChords(rawDetections);
+  return mergeIdenticalChords(timeline);
 }
 
-function mergeIdenticalChords(detections) {
-  if (!detections.length) return [];
-  
-  const merged = [detections[0]];
+function mergeIdenticalChords(timeline) {
+  if (!timeline.length) return [];
+  const merged = [timeline[0]];
 
-  for (let i = 1; i < detections.length; i++) {
+  for (let i = 1; i < timeline.length; i++) {
     const last = merged[merged.length - 1];
-    const current = detections[i];
+    const current = timeline[i];
 
     if (current.chord === last.chord) {
       last.endTime = current.endTime;
