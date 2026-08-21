@@ -1,0 +1,93 @@
+:root {
+  --bg-color: #121212;
+  --surface-color: #1e1e1e;
+  --primary-color: #00e676;
+  --text-color: #ffffff;
+  --text-dim: #b0b0b0;
+  --border-color: #333333;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+.app-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+header {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.controls-bar {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  background: var(--surface-color);
+  padding: 15px;
+  border-radius: 8px;
+}
+
+#audio-player {
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.chord-timeline {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 15px 0;
+  scroll-behavior: smooth;
+}
+
+.chord-card {
+  flex: 0 0 100px;
+  height: 90px;
+  background-color: var(--surface-color);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.chord-card.active {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 12px rgba(0, 230, 118, 0.4);
+  transform: scale(1.05);
+}
+
+.chord-card .root {
+  font-size: 1.8rem;
+  font-weight: bold;
+}
+
+.chord-card .timestamp {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+.diagram-container {
+  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#chord-diagram svg {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 10px;
+}
