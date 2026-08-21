@@ -1,5 +1,5 @@
 import { analyzeAudioBuffer } from './audioAnalyzer.js';
-import { transposeForCapo } from './chordTransposer.js';
+import { transposeForCapo, suggestBestCapo } from './chordTransposer.js';
 import { renderChordSVG } from './chordRenderer.js';
 import { initVisualizer, renderLiveChroma } from './chromaVisualizer.js';
 
@@ -10,6 +10,8 @@ let activeChordIndex = -1;
 const audioPlayer = document.getElementById('audio-player');
 const audioInput = document.getElementById('audio-input');
 const capoSelect = document.getElementById('capo-select');
+const suggestCapoBtn = document.getElementById('suggest-capo-btn');
+const capoSuggestionMsg = document.getElementById('capo-suggestion-msg');
 const timelineContainer = document.getElementById('chord-timeline');
 const diagramContainer = document.getElementById('chord-diagram');
 const chromaCanvas = document.getElementById('chroma-canvas');
@@ -22,8 +24,9 @@ audioInput.addEventListener('change', async (event) => {
   const file = event.target.files[0];
   if (!file) return;
 
-  timelineContainer.innerHTML = `<p style="color: var(--primary-color);">Extracting pitch profile & mapping chords...</p>`;
+  timelineContainer.innerHTML = `<p style="color: var(--primary-color);">Extracting pitch profile & mapping chords... 0%</p>`;
   diagramContainer.innerHTML = '';
+  capoSuggestionMsg.textContent = '';
   audioTimelineData = [];
   activeChordIndex = -1;
 
@@ -35,8 +38,12 @@ audioInput.addEventListener('change', async (event) => {
     const arrayBuffer = await file.arrayBuffer();
     const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
-    // Extract pre-computed timeline
-    audioTimelineData = await analyzeAudioBuffer(audioBuffer);
+    // Extract pre-computed timeline, reporting progress into the timeline area
+    audioTimelineData = await analyzeAudioBuffer(audioBuffer, (fraction) => {
+      const pct = Math.round(fraction * 100);
+      timelineContainer.innerHTML = `<p style="color: var(--primary-color);">Extracting pitch profile & mapping chords... ${pct}%</p>`;
+    });
+
     renderTimeline();
 
     if (audioTimelineData.length > 0) {
@@ -56,6 +63,30 @@ capoSelect.addEventListener('change', (e) => {
   if (activeChordIndex !== -1) {
     updateActiveDiagram();
   }
+});
+
+// 2b. "Suggest Best Capo" - scans capo 0-7 for the fret that turns the most
+// detected chords into easy open shapes (C, D, E, G, A, Am, Dm, Em).
+suggestCapoBtn.addEventListener('click', () => {
+  if (!audioTimelineData.length) {
+    capoSuggestionMsg.textContent = 'Load a song first.';
+    return;
+  }
+
+  const chordNames = audioTimelineData.map((item) => item.chord);
+  const { capo, easyCount, totalUnique } = suggestBestCapo(chordNames);
+
+  capoSelect.value = String(capo);
+  currentCapo = capo;
+  renderTimeline();
+  if (activeChordIndex !== -1) {
+    updateActiveDiagram();
+  }
+
+  capoSuggestionMsg.textContent =
+    capo === 0
+      ? `Best fit: No capo (${easyCount}/${totalUnique} chords are already easy shapes).`
+      : `Best fit: Capo ${capo} (${easyCount}/${totalUnique} chords become easy shapes).`;
 });
 
 // 3. Render Timeline Cards
